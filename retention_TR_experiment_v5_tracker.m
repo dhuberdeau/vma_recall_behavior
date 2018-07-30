@@ -191,6 +191,7 @@ for block_num = 1:4
                 k = sum(~isnan(x(1,:)))+1;
                 del_1 = tic;
                 [tex, pts, nrdropped, imtext]=Screen('GetCapturedImage', win, grabber, 1, [], 2);
+
                 delays(1,k) = toc(del_1);
                 del_1 = tic;
     %             img = permute(imtext([3,2,1], :,:), [3,2,1]);
