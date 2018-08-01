@@ -1,3 +1,11 @@
+% cam_test_5.m Tests the camera setup with a different scheme for capturing
+% webcam images, which is to not wait for a newly avaialble frame and
+% instead use the old rame if a new one is not available. it turns out that
+% this scheme does not substantially change the run time performance
+% (sampling rate) at all, so the recommendation will be to revert to the
+% standard method, which is to wait for a frame to be available (which
+% apparently takes very little time in practice).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% CAMERA KAPTURE
 AssertOpenGL;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% CAMERA KAPTURE
@@ -14,6 +22,7 @@ ind2_d = repmat((1:DISC_SIZE:res1), res2/DISC_SIZE, 1);
 x = nan(1, 10000);
 y = nan(1, 10000);
 tim = nan(1, 10000);
+missed_frames = nan(1, 1000);
 cursor_dims = [-10 -10 10 10]';
 
 screens=Screen('Screens');
@@ -23,24 +32,48 @@ screenNumber=max(screens);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% CAMERA KAPTURE
 load('camera_params.mat');
 load('mm_per_pix.mat');
-load('camera_angle_calibration.mat');
-angle_error = -angle_error;
 
 dev_list = Screen('VideoCaptureDevices');
 grabber = Screen('OpenVideoCapture', win, dev_list(5).DeviceIndex);
 Screen('StartVideoCapture', grabber, 60, 1);
+
+% Get an initial sample of the camera. use 'Wait for image' = 1 to
+% ensure an image and texture are returned.
+[tex0, pts, nrdropped, imtext]=Screen('GetCapturedImage', win, grabber, 1, [], 2);
+
 RMIN = 0;
 RMAX = .025;
 SUBWIN_SIZE = 75;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% CAMERA KAPTURE
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%% CAMERA KAPTURE
-timr = tic;save camera_angle_calibration angle_error calib_angle_error
+
+timr = tic;
 keyIsDown = 0;
 k_samp = 1;
+k_missed = 1;
 while(~keyIsDown)
     [ keyIsDown, keyTime, keyCode ] = KbCheck; 
-    [tex, pts, nrdropped, imtext] = Screen('GetCapturedImage', win, grabber, 1, [], 2);
+    % poll for image; if avail. use, if not, use old and note
+%     [~, pts, nrdropped, im_sum_int]=Screen('GetCapturedImage', win, grabber, 3, []);
+%     if im_sum_int > 0
+%         % a new image is available; grab it and use it
+% %         Screen('Close', tex);
+%         [tex, pts, nrdropped, imtext]=Screen('GetCapturedImage', win, grabber, 0, [], 2);
+%     else
+%         % a new image is not available; use old one, and note
+%         Screen('GetCapturedImage', win, grabber, 4, tex);
+%     end
+    [tex_, pts, nrdropped, imtext_]=Screen('GetCapturedImage', win, grabber, 0, [], 2);
+    if tex_ > 0
+        % a new image was pulled
+        imtext = imtext_;
+        tex = tex_;
+        Screen('Close'Screen, tex_);
+    else
+        % no new image. use old one and note.
+        missed_frames(k_missed) = toc(timr);
+        k_missed = k_missed + 1;
+    end
     
     img_ = imtext(:, 1:DISC_SIZE:end, 1:DISC_SIZE:end);
     img = permute(img_([3,2,1], :,:), [3,2,1]);
@@ -62,11 +95,7 @@ while(~keyIsDown)
 
         if ~isempty(trk_x_r) && ~isempty(trk_y_r)
             try
-                calib_pts_ = undistortPoints([trk_x_r, trk_y_r], camera_params);
-                c_rr = cosd(angle_error);
-                s_rr = sind(angle_error);
-                calib_pts = (calib_pts_ - [res1, res2]/2)*[c_rr s_rr; -s_rr c_rr] ...
-                    + [res1, res2]/2;
+                calib_pts = undistortPoints([trk_x_r, trk_y_r], camera_params);
             catch
                 calib_pts = nan(1,2);
             end
@@ -82,7 +111,7 @@ while(~keyIsDown)
     %     Screen('DrawTexture', win, tex);
         Screen('FillOval', win, [200;200;0], [xr yr xr yr]' + cursor_dims);
         Screen('Flip', win);
-        Screen('Close', tex);
+%         Screen('Close', tex);
 
         k_samp = k_samp + 1;
     else
