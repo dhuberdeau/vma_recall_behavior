@@ -108,10 +108,10 @@ screens=Screen('Screens');
 screenNumber=min(screens);
 [win, rect] = Screen('OpenWindow', screenNumber, []); %[0 0 1600 900]);
 
-for block_num = 1%:4
+for block_num = 1:4
     switch block_num
         case 1
-            this_trials = 1:4;
+            this_trials = 1:12;
 % this_trials = 1:1;
             trial_type = trial_type_MASTER(this_trials);
             trial_target_numbers = trial_target_numbers_MASTER(this_trials);
@@ -626,21 +626,21 @@ for block_num = 1%:4
     
     %% between blocks break
     if block_num < 4
-%         Screen('Flip', win);
-%         Screen('DrawText', win, 'This is a mandatory 30 second break. Tracking has been disabled.', round(screen_dim1/2), round(screen_dim2/2));
-%         Screen('Flip', win);
-%         pause(10);%change back to 10 (and those below)
-%         Screen('DrawText', win, '...20 more seconds', round(screen_dim1/2), round(screen_dim2/2));
-%         Screen('Flip', win);
-%         pause(10);
-%         Screen('DrawText', win, '...10 more seconds', round(screen_dim1/2), round(screen_dim2/2));
-%         Screen('Flip', win);
-%         pause(5);
-%         Screen('DrawText', win, '...5 more seconds', round(screen_dim1/2), round(screen_dim2/2));
-%         Screen('Flip', win);
-%         pause(5);
-%         Screen('DrawText', win, 'Beginning new block now...', round(screen_dim1/2), round(screen_dim2/2));
-%         Screen('Flip', win);
+        Screen('Flip', win);
+        Screen('DrawText', win, 'This is a mandatory 30 second break. Tracking has been disabled.', round(screen_dim1/2), round(screen_dim2/2));
+        Screen('Flip', win);
+        pause(10);%change back to 10 (and those below)
+        Screen('DrawText', win, '...20 more seconds', round(screen_dim1/2), round(screen_dim2/2));
+        Screen('Flip', win);
+        pause(10);
+        Screen('DrawText', win, '...10 more seconds', round(screen_dim1/2), round(screen_dim2/2));
+        Screen('Flip', win);
+        pause(5);
+        Screen('DrawText', win, '...5 more seconds', round(screen_dim1/2), round(screen_dim2/2));
+        Screen('Flip', win);
+        pause(5);
+        Screen('DrawText', win, 'Beginning new block now...', round(screen_dim1/2), round(screen_dim2/2));
+        Screen('Flip', win);
         pause(1);
     else
         % exit
