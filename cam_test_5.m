@@ -14,6 +14,10 @@ ind2_d = repmat((1:DISC_SIZE:res1), res2/DISC_SIZE, 1);
 x = nan(1, 10000);
 y = nan(1, 10000);
 tim = nan(1, 10000);
+flip_onset_times = nan(1, 10000);
+flip_offset_times = nan(1, 10000);
+stim_times = nan(1, 10000);
+image_capture_time = nan(1, 10000);
 cursor_dims = [-10 -10 10 10]';
 
 screens=Screen('Screens');
@@ -24,7 +28,10 @@ screenNumber=max(screens);
 load('camera_params.mat');
 load('mm_per_pix.mat');
 load('camera_angle_calibration.mat');
-angle_error = -angle_error;
+% angle_error = -angle_error;
+c_rr = cosd(angle_error);
+s_rr = sind(angle_error);
+ROT_MAT = [c_rr s_rr; -s_rr c_rr];
 
 dev_list = Screen('VideoCaptureDevices');
 grabber = Screen('OpenVideoCapture', win, dev_list(5).DeviceIndex);
@@ -35,13 +42,15 @@ SUBWIN_SIZE = 75;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% CAMERA KAPTURE
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% CAMERA KAPTURE
-timr = tic;save camera_angle_calibration angle_error calib_angle_error
+
 keyIsDown = 0;
 k_samp = 1;
+% timr = tic;
+timr = GetSecs;
 while(~keyIsDown)
     [ keyIsDown, keyTime, keyCode ] = KbCheck; 
-    [tex, pts, nrdropped, imtext] = Screen('GetCapturedImage', win, grabber, 1, [], 2);
-    
+    [tex, image_cap_time, nrdropped, imtext] = Screen('GetCapturedImage', win, grabber, 1, [], 2);
+    image_capture_time(k_samp) = image_cap_time - timr;
     img_ = imtext(:, 1:DISC_SIZE:end, 1:DISC_SIZE:end);
     img = permute(img_([3,2,1], :,:), [3,2,1]);
     b = rgb2hsv(img);
@@ -63,10 +72,7 @@ while(~keyIsDown)
         if ~isempty(trk_x_r) && ~isempty(trk_y_r)
             try
                 calib_pts_ = undistortPoints([trk_x_r, trk_y_r], camera_params);
-                c_rr = cosd(angle_error);
-                s_rr = sind(angle_error);
-                calib_pts = (calib_pts_ - [res1, res2]/2)*[c_rr s_rr; -s_rr c_rr] ...
-                    + [res1, res2]/2;
+                calib_pts = (calib_pts_ - [res1, res2]/2)*ROT_MAT + [res1, res2]/2;
             catch
                 calib_pts = nan(1,2);
             end
@@ -75,24 +81,31 @@ while(~keyIsDown)
         end
         x(k_samp) = calib_pts(1,1)*mm_pix;
         y(k_samp) = calib_pts(1,2)*mm_pix;
-        tim(k_samp) = toc(timr);
+%         tim(k_samp) = toc(timr);
+        tim(k_samp) = GetSecs - timr;
         xr = calib_pts(1,1)*screen_dims(1)/res1;
         yr = calib_pts(1,2)*screen_dims(2)/res2;
 
     %     Screen('DrawTexture', win, tex);
         Screen('FillOval', win, [200;200;0], [xr yr xr yr]' + cursor_dims);
-        Screen('Flip', win);
+        [t_flip_0, t_stim, t_flip_f] = Screen('Flip', win);
+        flip_onset_times(k_samp) = t_flip_0 - timr;
+        flip_offset_times(k_samp) = t_flip_f - timr;
+        stim_times(k_samp) = t_stim - timr;
         Screen('Close', tex);
-
+        
         k_samp = k_samp + 1;
     else
 %         Screen('FillOval', win, [200;0;0], [trk_x_r trk_y_r trk_x_r trk_y_r]' + cursor_dims);
-        Screen('Flip', win);
+        [t_flip_0, t_stim, t_flip_f] = Screen('Flip', win);
+        flip_onset_times(k_samp) = t_flip_0 - timr;
+        flip_offset_times(k_samp) = t_flip_f - timr;
+        stim_times(k_samp) = t_stim - timr;
         Screen('Close', tex);
 
         x(k_samp) = nan;
         y(k_samp) = nan;
-        tim(k_samp) = toc(timr);
+        tim(k_samp) = GetSecs - timr;
         k_samp = k_samp + 1;
     end
 %     pause(.005);

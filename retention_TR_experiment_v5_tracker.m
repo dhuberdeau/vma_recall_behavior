@@ -23,6 +23,11 @@ screen_dim2 = screen_dims(2);
 
 load('camera_params');
 load('mm_per_pix');
+load('camera_angle_calibration.mat');
+% angle_error = angle_error;
+c_rr = cosd(angle_error);
+s_rr = sind(angle_error);
+ROT_MAT = [c_rr s_rr; -s_rr c_rr];
 
 ind1 = repmat((1:res2)', 1, res1);
 ind2 = repmat((1:res1), res2, 1);
@@ -38,19 +43,23 @@ ind2 = repmat((1:res1), res2, 1);
 RMIN = 0;
 RMAX = .025;
 
-x = nan(1, 10000);
-y = nan(1, 10000);
-tim = nan(1, 10000);
-delays = nan(5,10000);
+pre_alloc_samps = 36000; %enough for 10 minutes blocks
+pre_alloc_trial = 15*60; %enough for 15 second trials
+x = nan(1, pre_alloc_samps);
+y = nan(1, pre_alloc_samps);
+tim = nan(1, pre_alloc_samps); %pre-allocate space for 10-min. of 60-hz recording.
+
+
+delays = nan(5,pre_alloc_samps);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% CAMERA KAPTURE
 
 %%
 
 im_list = cell(1,4);
-im_list{1}= imread('shape1.jpg');
-im_list{2}= imread('shape2.jpg');
-im_list{3}= imread('shape3.jpg');
-im_list{4}= imread('shape4.jpg');
+im_list{1}= imread('afasa1.jpg');
+im_list{2}= imread('afasa2.jpg');
+im_list{3}= imread('afasa3.jpg');
+im_list{4}= imread('afasa4.jpg');
 
 CUE_TIME = .250; %sec
 RET_TIME = 3; %sec
@@ -99,10 +108,10 @@ screens=Screen('Screens');
 screenNumber=min(screens);
 [win, rect] = Screen('OpenWindow', screenNumber, []); %[0 0 1600 900]);
 
-for block_num = 1:4
+for block_num = 1%:4
     switch block_num
         case 1
-            this_trials = 1:1;
+            this_trials = 1:4;
 % this_trials = 1:1;
             trial_type = trial_type_MASTER(this_trials);
             trial_target_numbers = trial_target_numbers_MASTER(this_trials);
@@ -142,10 +151,11 @@ for block_num = 1:4
     Data.Type = nan(N_TRS, 1);
     Data.ViewTime = nan(N_TRS, 1);
     Data.Kinematics = cell(N_TRS, 1);
+    Data.EventTimes = cell(N_TRS, 1);
     Data.Target = nan(N_TRS, 1);
 
     %% initialize kinematics
-    kinematics = nan(10000, 3);
+%     kinematics = nan(pre_alloc_samps, 3);
     
     %% wait for subject to begin new block
     Screen('DrawText', win, 'Please press any key to begin the next block.', round(screen_dim1/2), round(screen_dim2/2));
@@ -161,14 +171,19 @@ for block_num = 1:4
         Screen('StartVideoCapture', grabber, 60, 1);
         %%%%%%%%%%%%%%%%%%%%%%%%%%%% CAMERA KAPTURE
 
-        exp_time = tic;
+%         exp_time = tic;
+        exp_time = GetSecs;
         for i_tr = 1:N_TRS
 
             state = 'prestart';
             entrance = 1;
-            kinematics = nan(10000, 3);
+            kinematics = nan(pre_alloc_trial, 3);
+            flip_onset_times = nan(1, pre_alloc_trial);
+            flip_offset_times = nan(1, pre_alloc_trial);
+            stim_times = nan(1, pre_alloc_trial);
+            image_capture_time = nan(1, pre_alloc_trial);
             k_samp = 1;
-            trial_time = tic;
+            trial_time = GetSecs; %tic;
             screen_text_buff = {};
             screen_pic_buff = {};
             screen_picDim_buff = cell(2,0);
@@ -191,7 +206,7 @@ for block_num = 1:4
                 k = sum(~isnan(x(1,:)))+1;
                 del_1 = tic;
                 [tex, pts, nrdropped, imtext]=Screen('GetCapturedImage', win, grabber, 1, [], 2);
-
+                image_capture_time(k_samp) = pts - exp_time;
                 delays(1,k) = toc(del_1);
                 del_1 = tic;
     %             img = permute(imtext([3,2,1], :,:), [3,2,1]);
@@ -221,7 +236,8 @@ for block_num = 1:4
                 del_1 = tic;
                 if ~isempty(trk_x_r) && ~isempty(trk_y_r)
                     try
-                        calib_pts = undistortPoints([trk_x_r, trk_y_r], camera_params);
+                        calib_pts_ = undistortPoints([trk_x_r, trk_y_r], camera_params);
+                        calib_pts = (calib_pts_ - [res1, res2]/2)*ROT_MAT + [res1, res2]/2;
                     catch
                         calib_pts = nan(1,2);
                     end
@@ -230,14 +246,15 @@ for block_num = 1:4
                 end
                 x(1,k) = calib_pts(1,1)*mm_pix;
                 y(1,k) = calib_pts(1,2)*mm_pix;
-                tim(k) = toc(exp_time);
+%                 tim(k) = toc(exp_time);
+                tim(k) = GetSecs - exp_time;
                 xr = calib_pts(1,1)*screen_dims(1)/res1;
                 yr = calib_pts(1,2)*screen_dims(2)/res2;
                 Screen('Close', tex);
                 delays(5,k)= toc(del_1);
                  %%%%%%%%%%%%%%%%%%%%%%%%%%%% CAMERA KAPTURE
 
-                kinematics(k_samp, :) = [toc(exp_time), xr, yr];% translate to screen coordinates
+                kinematics(k_samp, :) = [GetSecs - exp_time, xr, yr];% translate to screen coordinates
                 Screen('FillOval', win, [cursor_color, screen_color_buff],...
                     [[kinematics(k_samp, 2:3), kinematics(k_samp, 2:3)]' + cursor_dims, ...
                     screen_oval_buff]);
@@ -262,8 +279,14 @@ for block_num = 1:4
                     Screen('FillOval', win, [255, 0, 10]',...
                         [kinematics(k_samp, 2:3), kinematics(k_samp, 2:3)]' + cursor_dims);
                 end
-                Screen('Flip', win);
-
+                
+                % THE MAIN EXPERIMENT FLIP (FLIPS SCREEN EVERY SAMPLE):
+%                 Screen('Flip', win);
+                [t_flip_0, t_stim, t_flip_f] = Screen('Flip', win);
+                flip_onset_times(k_samp) = t_flip_0 - exp_time;
+                flip_offset_times(k_samp) = t_flip_f - exp_time;
+                stim_times(k_samp) = t_stim - exp_time;
+                
                 switch state
                     case 'prestart'
                         if entrance == 1
@@ -296,7 +319,7 @@ for block_num = 1:4
                     case 'home'
                         if entrance == 1
                             % first entrance into home state
-                            home_start_time = toc(trial_time);
+                            home_start_time = GetSecs - trial_time; %toc(trial_time);
                             switch trial_type(i_tr)
                                 case 4 % catch trial 
                                     rnd_ind = randperm(3);
@@ -391,7 +414,8 @@ for block_num = 1:4
                             entrance = 0;
                             curr_target = targ_coords_base(trial_target_numbers(i_tr),:);
                         else
-                            if (toc(trial_time) - home_start_time) < CUE_TIME
+%                             if (toc(trial_time) - home_start_time) < CUE_TIME
+                            if ((GetSecs - trial_time) - home_start_time) < CUE_TIME
                                 % actually do nothing.. just wait
                             else
                                 % extinguish cue and switch to retention state
@@ -420,10 +444,11 @@ for block_num = 1:4
                     case 'retention'
                         if entrance == 1
                             % just entered state
-                            retention_start_time = toc(trial_time);
+                            retention_start_time = GetSecs - trial_time; %toc(trial_time);
                             entrance = 0;
                         else
-                            if (toc(trial_time) - retention_start_time) < RET_TIME
+                            if ((GetSecs - trial_time) - retention_start_time) < RET_TIME 
+                                %(toc(trial_time) - retention_start_time) < RET_TIME
                                 % actually do nothing.. just wait
                             else
                                 % extinguish cue and switch to retention state
@@ -435,7 +460,7 @@ for block_num = 1:4
                     case 'TR'
                         if entrance == 1
                             % just entered TR state
-                            TR_state_time = toc(trial_time);
+                            TR_state_time = GetSecs - trial_time; %toc(trial_time);
                             startTime = PsychPortAudio('Start', pahandle);
                             target_shown = 0;
                             mov_begun = 0;
@@ -446,7 +471,8 @@ for block_num = 1:4
                         else
                             home_dist = norm(home_position - kinematics(k_samp, 2:3));
     %                         targ_dist = norm(curr_target - kinematics(k_samp, 2:3));
-                            state_elapsed_time = (toc(trial_time) - TR_state_time);
+%                             state_elapsed_time = (toc(trial_time) - TR_state_time);
+                            state_elapsed_time = ((GetSecs - trial_time) - TR_state_time);
                             if state_elapsed_time >= TR_TIME
                                 bubble_rad = (state_elapsed_time - TR_TIME)*bubble_expand_rate;
                                 if bubble_rad > TARG_LEN
@@ -461,28 +487,30 @@ for block_num = 1:4
                             if home_dist > 15 && ~mov_begun
                                 % movement just begun
                                 mov_begun = 1;
-                                move_start_time = toc(trial_time);
+                                move_start_time = (GetSecs - trial_time); %toc(trial_time);
                             end
                             if home_dist > TARG_LEN && ~mov_ended
                                 mov_ended = 1;
-                                move_end_time = toc(trial_time);
+                                move_end_time = GetSecs - trial_time; %toc(trial_time);
                             end
-                            if (toc(trial_time) - TR_state_time) > (TR_TIME - prescribed_PT(i_tr))
+                            if ((GetSecs - trial_time) - TR_state_time) > (TR_TIME - prescribed_PT(i_tr))
+                            %if (toc(trial_time) - TR_state_time) > (TR_TIME - prescribed_PT(i_tr))
                                 % time to show target once
                                 if target_shown == 0
                                     k_oval_buff = k_oval_buff + 1;
                                     screen_oval_buff(:, k_oval_buff) = [targ_coords_base(trial_target_numbers(i_tr),:)'; targ_coords_base(trial_target_numbers(i_tr),:)'] + target_dims;
                                     screen_color_buff(:, k_oval_buff) = [0;0;0];
                                     target_shown = 1;
-                                    target_shown_time = toc(trial_time);
-                                    Data.time_targ_disp(i_tr) = toc(exp_time);
+                                    target_shown_time = GetSecs - trial_time; %toc(trial_time);
+                                    Data.time_targ_disp(i_tr) = GetSecs - exp_time;%toc(exp_time);
                                 else
                                     % no need to do anything
                                 end
                             else
                                 % wait for PT start time
                             end
-                            if (toc(trial_time) - TR_state_time) > (TR_TIME + MOV_TIME)
+                            %if (toc(trial_time) - TR_state_time) > (TR_TIME + MOV_TIME)
+                            if ((GetSecs - trial_time) - TR_state_time) > (TR_TIME + MOV_TIME)
                                 % transition to ITI state
                                 entrance = 1;
                                 state = 'ITI';
@@ -500,7 +528,7 @@ for block_num = 1:4
                         end
                     case 'ITI'
                         if entrance == 1
-                            ITI_state_time = toc(trial_time);
+                            ITI_state_time = GetSecs - trial_time; %toc(trial_time);
                             draw_red_cursor_flag = 0;
                             if abs(Data.RT(i_tr)) >= TR_TOLERANCE && Data.RT(i_tr) >= 0
                                 % movement was earlier than "go" cue &
@@ -528,16 +556,22 @@ for block_num = 1:4
 
                             entrance = 0;
                         else
-                            if (toc(trial_time) - ITI_state_time) > FB_TIME
+                            %if (toc(trial_time) - ITI_state_time) > FB_TIME
+                            if ((GetSecs - trial_time) - ITI_state_time) > FB_TIME
                                 % extinguish feedback
     %                             Screen('Flip', win);
                                 draw_text_flag = 0;
                             end
-                            if (toc(trial_time) - ITI_state_time) > (ITI_TIME)
+%                             if (toc(trial_time) - ITI_state_time) > (ITI_TIME)
+                            if ((GetSecs - trial_time) - ITI_state_time) > (ITI_TIME)
                                 % end trial
     %                             Screen('Flip', win);
                                 draw_text_flag = 0;
                                 Data.Kinematics{i_tr} = kinematics(~isnan(kinematics(:,1)), :);
+                                Data.EventTimes{i_tr} = [image_capture_time; ...
+                                    flip_onset_times;
+                                    stim_times;
+                                    flip_offset_times];
                                 state = 'end_state';
                             end
                         end
@@ -592,21 +626,21 @@ for block_num = 1:4
     
     %% between blocks break
     if block_num < 4
-        Screen('Flip', win);
-        Screen('DrawText', win, 'This is a mandatory 30 second break. Tracking has been disabled.', round(screen_dim1/2), round(screen_dim2/2));
-        Screen('Flip', win);
-        pause(10);%change back to 10 (and those below)
-        Screen('DrawText', win, '...20 more seconds', round(screen_dim1/2), round(screen_dim2/2));
-        Screen('Flip', win);
-        pause(10);
-        Screen('DrawText', win, '...10 more seconds', round(screen_dim1/2), round(screen_dim2/2));
-        Screen('Flip', win);
-        pause(5);
-        Screen('DrawText', win, '...5 more seconds', round(screen_dim1/2), round(screen_dim2/2));
-        Screen('Flip', win);
-        pause(5);
-        Screen('DrawText', win, 'Beginning new block now...', round(screen_dim1/2), round(screen_dim2/2));
-        Screen('Flip', win);
+%         Screen('Flip', win);
+%         Screen('DrawText', win, 'This is a mandatory 30 second break. Tracking has been disabled.', round(screen_dim1/2), round(screen_dim2/2));
+%         Screen('Flip', win);
+%         pause(10);%change back to 10 (and those below)
+%         Screen('DrawText', win, '...20 more seconds', round(screen_dim1/2), round(screen_dim2/2));
+%         Screen('Flip', win);
+%         pause(10);
+%         Screen('DrawText', win, '...10 more seconds', round(screen_dim1/2), round(screen_dim2/2));
+%         Screen('Flip', win);
+%         pause(5);
+%         Screen('DrawText', win, '...5 more seconds', round(screen_dim1/2), round(screen_dim2/2));
+%         Screen('Flip', win);
+%         pause(5);
+%         Screen('DrawText', win, 'Beginning new block now...', round(screen_dim1/2), round(screen_dim2/2));
+%         Screen('Flip', win);
         pause(1);
     else
         % exit
